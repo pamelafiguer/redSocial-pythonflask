@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>Pagina social</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/estilos.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+</head>
+
+<body>
+    <div class="background-image"></div>
+    <div class="container">
+
+        <div class="form-container">
+            <h2>REGISTER</h2>
+            <p>Sign up to get started with our services</p>
+            <form action="{{ url_for('main.register') }}" method="POST">
+
+                {{ form.hidden_tag() }}
+
+                <div class="input-group">
+                    <label for="name" style="vertical-align: inherit;font-size: small;">Nombres:
+                        {{ form.name(class="form-control", style="width: 160%;") }}
+                        
+                    </label>
+                </div>
+
+                <div class="input-group">
+                    <label for="lastname" style="vertical-align: inherit;font-size: small;">Apellidos:
+                        {{ form.lastname(class="form-control", style="width: 160%;") }}
+                    </label>
+                </div>
+
+                {% set month_names = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'] %}
+
+                
+                <div class="input-group">
+                    <label for="birthday_day">Fecha de Nacimiento:</label>
+                    {{ form.birthday_day(class_='custom-select-1') }}
+                    {{ form.birthday_month(class_='custom-select-2') }}
+                    {{ form.birthday_year(class_='custom-select-3') }}
+                </div>
+
+                <div class="input-group">Género:
+                    <div class="generos" style="margin-left: 30px;">
+                        {% for subfield in form.sex %}
+                            <label for="genero" class="sex">{{ subfield }} {{ subfield.label.text }}</label>
+                        {% endfor %}
+                    </div>
+                </div>
+                
+
+                <div class="input-group">
+                    <label for="email">
+                        {{ form.email(class="form-control", placeholder="Ingresa tu correo", style="width: 220%;") }}
+                    </label>
+                </div>
+
+                <div class="input-group">
+                    <label for="password">
+                        {{ form.password(class="form-control", placeholder="Contraseña Nueva", style="width: 220%;") }}
+                    </label>
+                </div>
+
+                <div class="input-group">
+                    <label for="password_confirmation">
+                        {{ form.password_confirmation(class="form-control", placeholder="Confirmar Contraseña", style="width: 220%;") }}
+                    </label>
+                </div>
+
+                <div class="input-group">
+                    <label for="button">
+                        <button> Registrarte </button>
+                    </label>
+                    <br>
+                    <a href="{{ url_for('main.login') }}">¿Ya tienes una cuenta?</a>
+                </div>
+
+            </form>
+        </div>
+
+        <div class="info-container">
+            <p>Join us and start exploring new opportunities!<br>Sign up now to begin your journey!</p>
+            <img src="{{ url_for('static', filename='css/imgen/Grupoparque.jpeg') }}" alt="Welcome Image">
+        </div>
+
+    </div>
+
+    {% if form.errors %}
+        <div class="alert alert-danger">
+            <ul>
+                {% for field, errors in form.errors.items() %}
+                    <li>{{ field }}: {{ errors[0] }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+    {% endif %}
+
+</body>
+</html>
