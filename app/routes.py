@@ -9,8 +9,6 @@ main = Blueprint("main", __name__)
 
 @main.route("/", methods=["GET", "POST"])
 def login():
-    if current_user.is_authenticated:
-        return redirect(url_for("main.feed"))
     
     form = LoginForm()
     if form.validate_on_submit():
@@ -19,14 +17,14 @@ def login():
 
         try:
             result = db.session.execute(
-                "CALL sp_login_user(:email, :password)",
+                "CALL Usuario_Login(:email, :password)",
                 {"email": email, "password": password},
             ).fetchone()
 
             if result:
-                user = User.query.get(result["id"])
-                login_user(user)
-                return redirect(url_for("main.feed"))
+
+                next_page = request.args.get('next')
+                return redirect(next_page or url_for("main.feed"))
             else:
                 flash("Credenciales incorrectas.", "error")
         except Exception as e:
@@ -37,9 +35,6 @@ def login():
 
 @main.route("/register", methods=["GET", "POST"])
 def register():
-    if current_user.is_authenticated:
-        return redirect(url_for("main.feed"))
-
     form = RegisterForm()
     if form.validate_on_submit():
         nombres = form.name.data
@@ -69,35 +64,10 @@ def register():
 
     return render_template("register.html", form=form)
 
-
 @main.route("/feed")
-@login_required
 def feed():
-    try:
-        publicaciones = db.session.execute("CALL obtener_publicaciones()").fetchall()
-        comentarios = {}
-        reacciones = {}
+    return render_template("feed.html")
 
-        for publicacion in publicaciones:
-            # Obtener comentarios
-            comentarios[publicacion.id] = db.session.execute(
-                "CALL obtener_comentarios(:id_publicacion)", {"id_publicacion": publicacion.id}
-            ).fetchall()
-
-            # Obtener reacciones
-            reacciones[publicacion.id] = db.session.execute(
-                "CALL ObtenerReacciones(:id_publicacion)", {"id_publicacion": publicacion.id}
-            ).fetchall()
-
-        return render_template(
-            "feed.html", 
-            publicaciones=publicaciones, 
-            comentarios=comentarios, 
-            reacciones=reacciones
-        )
-    except Exception as e:
-        flash(f"Error al obtener datos de las publicaciones: {str(e)}", "error")
-        return redirect(url_for("main.error"))
 
 
 @main.route("/logout")
