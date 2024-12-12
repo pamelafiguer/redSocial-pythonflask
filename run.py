@@ -1,13 +1,24 @@
-from flask import (Flask,request,jsonify,render_template,redirect,url_for,session,flash,)
+from django import db
+from flask import (
+    Flask,
+    request,
+    jsonify,
+    render_template,
+    redirect,
+    url_for,
+    session,
+    flash,
+)
 from flask_mysqldb import MySQL
 from flask_login import current_user, login_required
 from werkzeug.security import check_password_hash
 from flask_login import LoginManager, login_user, login_required, logout_user, UserMixin
-from datetime import datetime
+from datetime import datetime, time
 import MySQLdb
 import os
 from datetime import datetime
 from werkzeug.utils import secure_filename
+from flask import send_from_directory
 
 
 app = Flask(__name__)
@@ -19,9 +30,15 @@ app.config["MYSQL_HOST"] = "localhost"
 app.config["MYSQL_USER"] = "root"
 app.config["MYSQL_PASSWORD"] = ""
 app.config["MYSQL_DB"] = "red_social"
-app.config['UPLOAD_FOLDER'] = 'uploads/posts'  # Carpeta donde se almacenarán las imágenes
-app.config['ALLOWED_EXTENSIONS'] = {'jpeg', 'png', 'jpg', 'gif'}
-app.config['MAX_CONTENT_LENGTH'] = 2 * 1024 * 1024 
+app.config["UPLOAD_FOLDER"] = (
+    "uploads/posts"  # Carpeta donde se almacenarán las imágenes
+)
+app.config["ALLOWED_EXTENSIONS"] = {"jpeg", "png", "jpg", "gif"}
+app.config["MAX_CONTENT_LENGTH"] = 2 * 1024 * 1024
+UPLOAD_FOLDER = "static/profile"
+ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg"}
+app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
+app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # 16 MB max
 
 
 mysql = MySQL(app)
@@ -30,13 +47,30 @@ login_manager.login_view = "login"  # Redirigir usuarios no autenticados al logi
 
 
 # Modelo de usuario
+
+
+def allowed_file(filename):
+    return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
+
+
 class User(UserMixin):
     def __init__(self, id, email):
         self.id = id  # Flask-Login requiere este atributo
         self.email = email
 
+
 def allowed_file(filename):
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS']
+    return (
+        "." in filename
+        and filename.rsplit(".", 1)[1].lower() in app.config["ALLOWED_EXTENSIONS"]
+    )
+
+
+@app.route("/uploads/posts/<filename>")
+def uploaded_file(filename):
+    return send_from_directory(
+        os.path.join(app.config["UPLOAD_FOLDER"], "posts"), filename
+    )
 
 
 @login_manager.user_loader
@@ -81,8 +115,19 @@ def login():
             # Comparar contraseñas directamente
             if stored_password.strip() == password.strip():
                 user = User(id=user_data[0], email=user_data[5])
+                user_id = user_data[0]
                 login_user(user)
                 return redirect(url_for("feed"))  # Redirige al feed
+            else:
+                flash("Credenciales incorrectas.", "error")
+            if stored_password.strip() == password.strip():
+                # Guardar datos en la sesión
+                session['id_usuario'] = user_id
+                session['nombre'] = user_data
+                session['email'] = email
+
+                flash(f"Bienvenido, {user_data}!", "success")
+                return redirect(url_for("feed"))
             else:
                 flash("Credenciales incorrectas.", "error")
         else:
@@ -90,51 +135,60 @@ def login():
 
     except Exception as e:
         flash(f"Error interno: {str(e)}", "error")
-        print(f"Detalles del error: {e}")  # Detalles del error en la consola
+        print(f"Detalles del error: (e)")  # Detalles del error en la consola
         return redirect(url_for("login"))
 
-@app.route('/nuevo_feed', methods=['POST'])
+
+@app.route("/nuevo_feed", methods=["POST"])
 @login_required
 def nuevo_feed():
     if not current_user.is_authenticated:
-        flash('Debes iniciar sesión para publicar.', 'error')
-        return redirect(url_for('login'))  # Redirige a la ruta de inicio de sesión
+        flash("Debes iniciar sesión para publicar.", "error")
+        return redirect(url_for("login"))  # Redirige a la ruta de inicio de sesión
 
     # Validar los datos del formulario
-    content = request.form.get('content')
+    content = request.form.get("content")
     if not content or len(content) > 500:
-        flash('El contenido es obligatorio y no debe exceder los 500 caracteres.', 'error')
-        return redirect(url_for('feed'))  # O redirige a la página del feed
+        flash(
+            "El contenido es obligatorio y no debe exceder los 500 caracteres.", "error"
+        )
+        return redirect(url_for("feed"))  # O redirige a la página del feed
 
     # Procesar la imagen si existe
     image_path = None
-    if 'imagen' in request.files:
-        imagen = request.files['imagen']
+    if "imagen" in request.files:
+        imagen = request.files["imagen"]
         if imagen and allowed_file(imagen.filename):
             try:
                 # Guardar la imagen con un nombre único
                 filename = secure_filename(imagen.filename)
                 image_name = f"{int(datetime.now().timestamp())}_{filename}"
-                image_path = os.path.join(app.config['UPLOAD_FOLDER'], image_name).replace("\\", "/")
+                image_path = os.path.join(
+                    app.config["UPLOAD_FOLDER"], image_name
+                ).replace("\\", "/")
                 imagen.save(image_path)
             except Exception as e:
-                flash(f'Error al subir la imagen: {str(e)}', 'error')
-                return redirect(url_for('feed'))  # O redirige a la página del feed
+                flash(f"Error al subir la imagen: {str(e)}", "error")
+                return redirect(url_for("feed"))  # O redirige a la página del feed
 
     try:
         # Insertar la publicación en la base de datos
         cur = mysql.connection.cursor()
-        cur.callproc('Crear_Publicacion', (current_user.id, content, image_path, datetime.utcnow()))
+        cur.callproc(
+            "Crear_Publicacion",
+            (current_user.id, content, image_path, datetime.utcnow()),
+        )
         mysql.connection.commit()
         cur.close()
 
-        flash('Publicación creada exitosamente.', 'success')
-        return redirect(url_for('feed')) 
+        flash("Publicación creada exitosamente.", "success")
+        return redirect(url_for("feed"))
 
     except Exception as e:
         mysql.connection.rollback()  # Deshacer cambios en caso de error
-        flash(f'Error al crear la publicación: {str(e)}', 'error')
-        return redirect(url_for('feed'))  # O redirige a la página del feed
+        flash(f"Error al crear la publicación: {str(e)}", "error")
+        return redirect(url_for("feed"))  # O redirige a la página del feed
+
 
 # Ruta protegida (feed)
 @app.route("/feed")
@@ -347,12 +401,286 @@ def comentar(id_publicacion):
         return redirect(url_for("feed"))
 
 
+@login_required
+def amigos():
+    try:
+        cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+
+        # Obtener amigos del usuario actual
+        cursor.execute(
+            """
+            SELECT u.id_usuario, u.email, u.nombres, u.apellidos
+            FROM Usuario u
+            JOIN Amigos a ON (a.id_usuario1 = u.id_usuario OR a.id_usuario2 = u.id_usuario)
+            WHERE (a.id_usuario1 = %s OR a.id_usuario2 = %s) AND a.estado = 'aceptada'
+        """,
+            (current_user.id, current_user.id),
+        )
+        amigos = cursor.fetchall()
+        cursor.close()
+
+        return render_template("amigos.html", amigos=amigos)
+
+    except Exception as e:
+        flash(f"Error al obtener amigos: {str(e)}", "error")
+        return redirect(url_for("feed"))
+
+
 # Ruta de cierre de sesión
 @app.route("/logout")
 @login_required
 def logout():
     logout_user()
     return redirect(url_for("login"))
+
+
+@app.route("/amigos")
+@login_required
+def amigos():
+    try:
+        cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+
+        # Obtener amigos del usuario actual
+        cursor.execute(
+            """
+            SELECT u.id_usuario, u.email, u.nombres, u.apellidos
+            FROM Usuario u
+            JOIN Amigos a ON (a.id_usuario1 = u.id_usuario OR a.id_usuario2 = u.id_usuario)
+            WHERE (a.id_usuario1 = %s OR a.id_usuario2 = %s) AND a.estado = 'aceptada'
+            """,
+            (current_user.id, current_user.id),
+        )
+        amigos = cursor.fetchall()
+        cursor.close()
+
+        return render_template("amigos.html", amigos=amigos)
+
+    except Exception as e:
+        flash(f"Error al obtener amigos: {str(e)}", "error")
+        return redirect(url_for("feed"))
+
+
+# Ruta para ver los detalles de un perfil
+@app.route("/perfil/<int:id_usuario>")
+@login_required
+def perfil(id_usuario):
+    try:
+        cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+        cursor.execute("SELECT * FROM Usuario WHERE id_usuario = %s", (id_usuario,))
+        usuario_perfil = cursor.fetchone()
+        cursor.close()
+
+        if not usuario_perfil:
+            flash("Usuario no encontrado.", "error")
+            return redirect(url_for("feed"))
+
+        # Obtener publicaciones del usuario
+        cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+        cursor.execute(
+            "SELECT * FROM Publicacion WHERE id_usuario = %s ORDER BY fecha_publicacion DESC",
+            (id_usuario,),
+        )
+        publicaciones = cursor.fetchall()
+        cursor.close()
+
+        return render_template(
+            "perfil.html", usuario=usuario_perfil, publicaciones=publicaciones
+        )
+
+    except Exception as e:
+        flash(f"Error al cargar el perfil: {str(e)}", "error")
+        return redirect(url_for("feed"))
+
+
+# Ruta para agregar un nuevo amigo
+@app.route("/agregar_amigo/<int:id_usuario>", methods=["POST"])
+@login_required
+def agregar_amigo(id_usuario):
+    try:
+        cursor = mysql.connection.cursor()
+
+        # Comprobar si ya son amigos
+        cursor.execute(
+            """
+            SELECT * FROM Amigos
+            WHERE (id_usuario1 = %s AND id_usuario2 = %s) OR (id_usuario1 = %s AND id_usuario2 = %s)
+            """,
+            (current_user.id, id_usuario, id_usuario, current_user.id),
+        )
+        amigo_existente = cursor.fetchone()
+
+        if amigo_existente:
+            flash("Ya son amigos.", "info")
+            return redirect(url_for("perfil", id_usuario=id_usuario))
+
+        # Agregar nuevo amigo
+        cursor.execute(
+            "INSERT INTO Amigos (id_usuario1, id_usuario2, estado) VALUES (%s, %s, 'pendiente')",
+            (current_user.id, id_usuario),
+        )
+        mysql.connection.commit()
+        cursor.close()
+
+        flash("Solicitud de amistad enviada.", "success")
+        return redirect(url_for("perfil", id_usuario=id_usuario))
+
+    except Exception as e:
+        flash(f"Error al agregar amigo: {str(e)}", "error")
+        return redirect(url_for("perfil", id_usuario=id_usuario))
+
+
+# Ruta para aceptar solicitud de amistad
+@app.route("/aceptar_amigo/<int:id_usuario>", methods=["POST"])
+@login_required
+def aceptar_amigo(id_usuario):
+    try:
+        cursor = mysql.connection.cursor()
+
+        # Actualizar estado de la solicitud de amistad a 'aceptada'
+        cursor.execute(
+            """
+            UPDATE Amigos
+            SET estado = 'aceptada'
+            WHERE (id_usuario1 = %s AND id_usuario2 = %s) OR (id_usuario1 = %s AND id_usuario2 = %s)
+            """,
+            (current_user.id, id_usuario, id_usuario, current_user.id),
+        )
+        mysql.connection.commit()
+        cursor.close()
+
+        flash("Solicitud de amistad aceptada.", "success")
+        return redirect(url_for("amigos"))
+
+    except Exception as e:
+        flash(f"Error al aceptar solicitud de amistad: {str(e)}", "error")
+        return redirect(url_for("amigos"))
+
+
+# Ruta para eliminar amigo
+@app.route("/eliminar_amigo/<int:id_usuario>", methods=["POST"])
+@login_required
+def eliminar_amigo(id_usuario):
+    try:
+        cursor = mysql.connection.cursor()
+
+        # Eliminar relación de amistad
+        cursor.execute(
+            """
+            DELETE FROM Amigos
+            WHERE (id_usuario1 = %s AND id_usuario2 = %s) OR (id_usuario1 = %s AND id_usuario2 = %s)
+            """,
+            (current_user.id, id_usuario, id_usuario, current_user.id),
+        )
+        mysql.connection.commit()
+        cursor.close()
+
+        flash("Amigo eliminado.", "success")
+        return redirect(url_for("amigos"))
+
+    except Exception as e:
+        flash(f"Error al eliminar amigo: {str(e)}", "error")
+        return redirect(url_for("amigos"))
+
+
+@app.route("/actualizar_foto_perfil", methods=["POST"])
+def actualizar_foto_perfil():
+    if "foto_perfil" not in request.files:
+        flash("No se ha seleccionado archivo", "error")
+        return redirect(request.url)
+
+    file = request.files["foto_perfil"]
+    if file and allowed_file(file.filename):
+        filename = f"{str(int(time.time()))}_{secure_filename(file.filename)}"
+        file.save(os.path.join(app.config["UPLOAD_FOLDER"], filename))
+
+        # Procedimiento almacenado para actualizar la foto de perfil
+        try:
+            user_id = current_user.id
+            foto_perfil_path = f"profile/{filename}"
+
+            # Llamar al procedimiento almacenado en la base de datos
+            db.session.execute(
+                "CALL ActualizarFotoPerfil(:user_id, :foto_perfil)",
+                {"user_id": user_id, "foto_perfil": foto_perfil_path},
+            )
+            db.session.commit()
+
+            flash("Foto de perfil actualizada exitosamente", "success")
+        except Exception as e:
+            db.session.rollback()
+            flash(f"Error al actualizar la foto: {str(e)}", "error")
+
+        return redirect(url_for("Usuario", id_usuario=session['id_usuario']))
+
+    flash("Formato de archivo no permitido", "error")
+    return redirect(request.url)
+
+
+@app.route("/editar_perfil", methods=["POST"])
+def editar_perfil():
+    nombre = request.form["nombre"]
+    apellidos = request.form["apellidos"]
+    fecha_nacimiento = request.form["fecha_nacimiento"]
+    genero = request.form["genero"]
+    email = request.form["email"]
+
+    try:
+        # Llamar al procedimiento almacenado para actualizar el perfil
+        db.session.execute(
+            "CALL ActualizarPerfilUsuario(:user_id, :nombre, :apellidos, :fecha_nacimiento, :genero, :email)",
+            {
+                "user_id": current_user.id,
+                "nombre": nombre,
+                "apellidos": apellidos,
+                "fecha_nacimiento": fecha_nacimiento,
+                "genero": genero,
+                "email": email,
+            },
+        )
+        db.session.commit()
+
+        flash("Perfil actualizado exitosamente", "success")
+    except Exception as e:
+        db.session.rollback()
+        flash(f"Error al actualizar el perfil: {str(e)}", "error")
+
+    return redirect(url_for("Usuario", id_usuario=session['id_usuario']))
+
+@app.route('/buscar_usuario', methods=['GET'])
+def buscar_usuario():
+    query = request.args.get('query')
+    if not query or len(query) < 3:
+        return jsonify({'error': 'El término de búsqueda debe tener al menos 3 caracteres'}), 400
+
+    try:
+        # Llamar al procedimiento almacenado para realizar la búsqueda
+        usuarios = db.session.execute("CALL BuscarUsuarioPorNombre(:query)", {'query': query})
+        usuarios = usuarios.fetchall()
+
+        if not usuarios:
+            return jsonify({'error': 'Usuario no encontrado'}), 404
+        
+        return jsonify([usuario._asdict() for usuario in usuarios])
+
+    except Exception as e:
+        return jsonify({'error': 'Error al realizar la búsqueda', 'message': str(e)}), 500
+
+@app.route('/Usuario/<int:id_usuario>', methods=['GET'])
+def Usuario(id_usuario):
+    if 'id_usuario' not in session or session['id_usuario'] != id_usuario:
+        flash("No tienes permiso para acceder a esta página.", "danger")
+        return redirect(url_for("login"))
+    try:
+        # Obtener datos del usuario usando el procedimiento almacenado
+        usuario = db.session.execute("CALL ObtenerPerfilUsuario(:user_id)", {'user_id': id_usuario}).fetchone()
+        publicaciones = db.session.execute("CALL ListarPublicaciones(:user_id)", {'user_id': id_usuario}).fetchall()
+        amigos = db.session.execute("CALL ObtenerAmigosPorID(:user_id)", {'user_id': id_usuario}).fetchall()
+        fotos = db.session.execute("CALL ObtenerFotosPorID(:user_id)", {'user_id': id_usuario}).fetchall()
+
+        return render_template('Usuario.html', usuario=usuario, publicaciones=publicaciones, amigos=amigos, fotos=fotos)
+    except Exception as e:
+        flash(f'Error al obtener el perfil: {str(e)}', 'error')
+        return redirect(url_for('login'))
 
 
 if __name__ == "__main__":
